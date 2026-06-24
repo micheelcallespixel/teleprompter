@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Teleprompter</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0c0c0c;
+    color: #f2f2f2;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #setup-view {
+    padding: 24px;
+    height: 100vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 20px;
+  }
+  textarea {
+    width: 100%;
+    min-height: 160px;
+    box-sizing: border-box;
+    padding: 14px;
+    font-size: 16px;
+    line-height: 1.6;
+    border: 1px solid #333;
+    border-radius: 10px;
+    background: #1a1a1a;
+    color: #f2f2f2;
+    resize: vertical;
+    font-family: inherit;
+  }
+  textarea:focus { outline: none; border-color: #555; }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 18px 0;
+  }
+  .row label {
+    font-size: 14px;
+    color: #aaa;
+    min-width: 110px;
+  }
+  .row span.out {
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 28px;
+    text-align: right;
+  }
+  input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 4px;
+    background: #333;
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #f2f2f2;
+    cursor: pointer;
+  }
+  input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+  }
+  button {
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: 10px;
+    border: 1px solid #444;
+    background: #1a1a1a;
+    color: #f2f2f2;
+    padding: 14px;
+    cursor: pointer;
+  }
+  button:active { background: #2a2a2a; }
+  #start-btn {
+    margin-top: auto;
+    background: #2d6e4e;
+    border-color: #2d6e4e;
+    padding: 16px;
+    font-size: 17px;
+  }
+  #prompter-view {
+    display: none;
+    position: relative;
+    height: 100vh;
+    overflow: hidden;
+    background: #0c0c0c;
+  }
+  #center-line {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: rgba(255,255,255,0.15);
+    z-index: 1;
+    pointer-events: none;
+  }
+  #scroll-text {
+    position: absolute;
+    width: 100%;
+    padding: 0 28px;
+    box-sizing: border-box;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.5;
+    text-align: center;
+  }
+  #controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    gap: 8px;
+    padding: 10px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    background: rgba(20,20,20,0.95);
+    border-top: 1px solid #333;
+    z-index: 2;
+  }
+  #controls button {
+    flex: 1;
+    padding: 12px 8px;
+    font-size: 14px;
+  }
+  #controls button.icon-only {
+    flex: 0 0 50px;
+    font-size: 18px;
+  }
+</style>
+</head>
+<body>
+
+<div id="setup-view">
+  <h1>Teleprompter</h1>
+  <textarea id="script-input" placeholder="Cole o roteiro aqui..."></textarea>
+
+  <div class="row">
+    <label for="mirror-toggle">Espelhar</label>
+    <input type="checkbox" id="mirror-toggle">
+  </div>
+
+  <div class="row">
+    <label for="speed">Velocidade</label>
+    <input type="range" min="1" max="10" value="4" step="1" id="speed">
+    <span class="out" id="speed-out">4</span>
+  </div>
+
+  <div class="row">
+    <label for="fontsize">Tamanho</label>
+    <input type="range" min="24" max="80" value="42" step="2" id="fontsize">
+    <span class="out" id="fontsize-out">42</span>
+  </div>
+
+  <button id="start-btn">Iniciar</button>
+</div>
+
+<div id="prompter-view">
+  <div id="center-line"></div>
+  <div id="scroll-text"></div>
+  <div id="controls">
+    <button id="back-btn" class="icon-only">⏮</button>
+    <button id="playpause-btn">Pausar</button>
+    <button id="reset-btn" class="icon-only">↺</button>
+    <button id="edit-btn" class="icon-only">✎</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  const setupView = document.getElementById('setup-view');
+  const prompterView = document.getElementById('prompter-view');
+  const scriptInput = document.getElementById('script-input');
+  const mirrorToggle = document.getElementById('mirror-toggle');
+  const speedSlider = document.getElementById('speed');
+  const speedOut = document.getElementById('speed-out');
+  const fontSlider = document.getElementById('fontsize');
+  const fontOut = document.getElementById('fontsize-out');
+  const startBtn = document.getElementById('start-btn');
+  const scrollText = document.getElementById('scroll-text');
+  const prompterContainer = document.getElementById('prompter-view');
+  const playpauseBtn = document.getElementById('playpause-btn');
+  const backBtn = document.getElementById('back-btn');
+  const resetBtn = document.getElementById('reset-btn');
+  const editBtn = document.getElementById('edit-btn');
+
+  let posY = 0;
+  let playing = false;
+  let rafId = null;
+
+  // Restaura o último roteiro digitado, se houver
+  try {
+    const saved = localStorage.getItem('teleprompter_text');
+    if (saved) scriptInput.value = saved;
+  } catch (e) {}
+
+  speedSlider.addEventListener('input', () => { speedOut.textContent = speedSlider.value; });
+  fontSlider.addEventListener('input', () => {
+    fontOut.textContent = fontSlider.value;
+    scrollText.style.fontSize = fontSlider.value + 'px';
+  });
+
+  function applyMirror() {
+    scrollText.style.transform = mirrorToggle.checked ? 'scaleX(-1)' : 'none';
+  }
+  mirrorToggle.addEventListener('change', applyMirror);
+
+  function startSession() {
+    const text = scriptInput.value.trim();
+    if (!text) return;
+    try { localStorage.setItem('teleprompter_text', scriptInput.value); } catch (e) {}
+    scrollText.textContent = text;
+    scrollText.style.fontSize = fontSlider.value + 'px';
+    applyMirror();
+    setupView.style.display = 'none';
+    prompterView.style.display = 'block';
+    posY = prompterContainer.clientHeight * 0.7;
+    scrollText.style.top = posY + 'px';
+    playing = true;
+    updatePlayButton();
+    rafId = requestAnimationFrame(step);
+  }
+
+  function step() {
+    const speed = parseFloat(speedSlider.value) * 0.6;
+    posY -= speed;
+    scrollText.style.top = posY + 'px';
+    const textHeight = scrollText.scrollHeight;
+    if (posY < -textHeight) {
+      playing = false;
+      updatePlayButton();
+      return;
+    }
+    if (playing) rafId = requestAnimationFrame(step);
+  }
+
+  function updatePlayButton() {
+    playpauseBtn.textContent = playing ? 'Pausar' : 'Continuar';
+  }
+
+  function togglePlay() {
+    playing = !playing;
+    updatePlayButton();
+    if (playing) rafId = requestAnimationFrame(step);
+    else if (rafId) cancelAnimationFrame(rafId);
+  }
+
+  function resetScroll() {
+    playing = false;
+    updatePlayButton();
+    if (rafId) cancelAnimationFrame(rafId);
+    posY = prompterContainer.clientHeight * 0.7;
+    scrollText.style.top = posY + 'px';
+    playpauseBtn.textContent = 'Iniciar';
+  }
+
+  startBtn.addEventListener('click', startSession);
+  playpauseBtn.addEventListener('click', togglePlay);
+  backBtn.addEventListener('click', resetScroll);
+  resetBtn.addEventListener('click', resetScroll);
+  editBtn.addEventListener('click', () => {
+    playing = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    prompterView.style.display = 'none';
+    setupView.style.display = 'flex';
+  });
+
+  // Mantém a tela acesa durante a gravação, quando suportado pelo navegador
+  let wakeLock = null;
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+      }
+    } catch (e) {}
+  }
+  startBtn.addEventListener('click', requestWakeLock);
+})();
+</script>
+
+</body>
+</html>
